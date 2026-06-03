@@ -298,7 +298,7 @@ class CatanUIRenderer {
 
         Object.keys(rows).sort((a, b) => Number(a) - Number(b)).forEach(rowIndex => {
             const rowEl = document.createElement('div');
-            rowEl.className = 'hex-row';
+            rowEl.className = 'tile-row';
             rows[rowIndex].sort((a, b) => a.coord.q - b.coord.q).forEach(() => {
                 const el = document.createElement('div');
                 el.className = 'tile';
@@ -324,7 +324,7 @@ class CatanUIRenderer {
 
         Object.keys(rows).sort((a, b) => Number(a) - Number(b)).forEach(rowIndex => {
             const rowEl = document.createElement('div');
-            rowEl.className = 'hex-row';
+            rowEl.className = 'tile-row';
 
             rows[rowIndex].sort((a, b) => a.coord.q - b.coord.q).forEach(tile => {
                 const el = document.createElement('div');
@@ -340,7 +340,7 @@ class CatanUIRenderer {
                 if (tile.resource === 'wa') {
                     el.innerHTML = `<span class="label port-label">${tile.label}</span>`;
                 } else {
-                    const hasToken = tile.token ? `<div class="token ${tile.token === 6 || tile.token === 8 ? 'red' : ''}">${tile.token}</div>` : '';
+                    const hasToken = tile.token ? `<div class="token ${tile.token === 6 || tile.token === 8 ? 'red' : ''}">${tile.token}${tile.token === 6 || tile.token === 9 ? '.' : ''}</div>` : '';
                     // el.innerHTML = `${hasToken}<span class="label">${tile.name}</span>`;
                     el.innerHTML = `${hasToken}`;
                 }

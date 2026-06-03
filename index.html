@@ -3,6 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Fair Catan Boards</title>
 
     <link rel="stylesheet" href="style.css">
@@ -10,8 +11,11 @@
 
 <body>
 
-    <h1>Fair Catan Boards</h1>
-    <p>Generate balanced Catan maps for fun play.</p>
+    <header>
+        <h1>Fair Catan Boards</h1>
+        <p>Generate balanced Catan maps for fun play.</p>
+    </header>
+    
     <button id="trigger">Generate New Board</button>
 
     <div class="board-wrapper">
@@ -20,7 +24,7 @@
         <div id="stats-panel"></div>
     </div>
 
-    <details>
+    <details style="display: none;">
         <summary>
             <h3>Board Fairness Criteria</h3>
         </summary>
