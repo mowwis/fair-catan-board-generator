@@ -1,5 +1,5 @@
 body {
-    height: 100vh;
+    height: 100dvh;
 }
 
 main {
@@ -11,13 +11,14 @@ main {
 h1 {
     color: var(--color-gray-000);
     padding: 1rem 2rem;
-    font-size: 2.5rem;
+    font-size: clamp(2rem, 5vw, 2.5rem);
+    text-align: center;
     font-weight: 900;
     background-color: var(--color-gray-100);
 }
 
 #board-wrapper {
-    width: min(95vw, calc((100vh - 440px) / 1.1), 800px);
+    width: min(95vw, calc((100dvh - 440px) / 1.1), 800px);
     position: relative;
     user-select: none;
     aspect-ratio: 1 / 1.1;
@@ -100,6 +101,7 @@ h1 {
         padding: 3px 7px;
         position: absolute;
         font-size: 0.8rem;
+        text-align: center;
         background: rgba(15, 23, 42, 0.9);
         font-weight: bold;
         border-radius: 4px;
@@ -349,6 +351,7 @@ h1 {
     cursor: pointer;
     padding: 2rem 3rem;
     position: relative;
+    -webkit-tap-highlight-color: transparent;
 
     button {
         color: var(--color-gray-030);
