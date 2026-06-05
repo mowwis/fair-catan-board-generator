@@ -18,7 +18,7 @@ h1 {
 }
 
 #board-wrapper {
-    width: min(95vw, calc((100dvh - 440px) / 1.1), 800px);
+    width: min(95vw, calc((100dvh - 400px) / 1.1), 800px);
     position: relative;
     user-select: none;
     aspect-ratio: 1 / 1.1;
