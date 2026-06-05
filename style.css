@@ -28,7 +28,7 @@ h1 {
 }
 
 #board-wrapper {
-    width: min(95vw, calc((100dvh - 400px) / 1.1), 800px);
+    width: min(95vw, calc((100dvh - 280px) / 1.1), 800px);
     position: relative;
     user-select: none;
     aspect-ratio: 1 / 1.1;
@@ -359,7 +359,8 @@ h1 {
 #dice {
     gap: 2rem;
     cursor: pointer;
-    padding: 2rem 3rem;
+    padding: .5em 3rem;
+    font-size: clamp(3rem, 7vh, 5rem);
     position: relative;
     -webkit-tap-highlight-color: transparent;
 
@@ -370,7 +371,7 @@ h1 {
     }
 
     div {
-        --p: circle 7px;
+        --p: circle .08em;
         --c: #000000c2 99%, transparent;
         --mm: radial-gradient(var(--p) at 50% 50%, var(--c));
         --tl: radial-gradient(var(--p) at 30% 30%, var(--c));
@@ -380,8 +381,8 @@ h1 {
         --ml: radial-gradient(var(--p) at 30% 50%, var(--c));
         --mr: radial-gradient(var(--p) at 70% 50%, var(--c));
 
-        width: 5rem;
-        height: 5rem;
+        width: 1em;
+        height: 1em;
         position: relative;
         transition: transform 0.2s ease-out;
         box-shadow: 9px 6px 20px 3px rgba(0, 0, 0, 0.4), inset -5px -5px 20px 0px rgba(0, 0, 0, 0.4);
