@@ -1,449 +1,271 @@
-class HexCoord {
-    constructor(q, r) {
-        this.q = q;
-        this.r = r;
-        Object.freeze(this);
-    }
+const CONFIG = {
+    landPool: { desert: 1, brick: 3, ore: 3, grain: 4, wool: 4, lumber: 4 },
+    tokens: [2, 3, 3, 4, 4, 5, 5, 6, 6, 8, 8, 9, 9, 10, 10, 11, 11, 12],
+    ports: ['brick', 'lumber', 'ore', 'grain', 'wool'],
+    getProb: (n) => (n && n !== 7) ? (6 - Math.abs(7 - n)) / 36 * 100 : 0
+};
 
-    key() { return `${this.q},${this.r}`; }
-
-    distanceFromCenter() {
-        return (Math.abs(this.q) + Math.abs(this.q + this.r) + Math.abs(this.r)) / 2;
+const RULES = [
+    // 1. Keine Wüste an das Wasser
+    b => {
+        const d = b.land.find(t => t.res === 'desert');
+        return (d && b.getN(d).some(n => n.isWater) ? 1 : 0) * 10000;
+    },
+    // 2. Maximal 2 gleiche Ressourcen nebeneinander
+    b => b.land.reduce((sum, t) => sum + Math.max(0, b.getN(t).filter(n => n.res === t.res).length - 2), 0) * 8000,
+    // 3. KEINE gleichen Zahlen nebeneinander (nicht nur rote Zahlen!)
+    b => b.land.reduce((sum, t) => sum + b.getN(t).filter(n => n.tok === t.tok && t.tok !== 7).length, 0) * 12000,
+    // 4. Gleiche Zahlen dürfen nicht auf derselben Ressourcen-Art liegen (z.B. keine zwei 5er auf Erz)
+    b => {
+        let penalty = 0;
+        const seen = {};
+        b.land.forEach(t => {
+            if (t.tok === 7) return;
+            if (!seen[t.res]) seen[t.res] = [];
+            if (seen[t.res].includes(t.tok)) penalty++;
+            seen[t.res].push(t.tok);
+        });
+        return penalty * 5000;
+    },
+    // 5. Die gleiche Zahl darf nicht gleichzeitig auf Holz (lumber) und Lehm (brick) liegen
+    b => {
+        const lumberTokens = b.land.filter(t => t.res === 'lumber').map(t => t.tok);
+        const brickTokens = b.land.filter(t => t.res === 'brick').map(t => t.tok);
+        return lumberTokens.filter(tok => tok !== 7 && brickTokens.includes(tok)).length * 1500;
+    },
+    // 6. Intersection Fairness (Kreuzungspunkte balancieren)
+    b => {
+        const probs = b.intersections.map(i => i.reduce((s, t) => s + CONFIG.getProb(t.tok), 0));
+        const avg = probs.reduce((a, x) => a + x, 0) / probs.length;
+        return probs.reduce((sum, p) => sum + Math.abs(p - avg), 0) * 15;
+    },
+    // 7. Globale Ressourcen-Balance (Gesamtwahrscheinlichkeit aller Rohstoffe angleichen)
+    b => {
+        const yields = { lumber: 0, wool: 0, grain: 0, ore: 0, brick: 0 };
+        b.land.forEach(t => { if (t.res !== 'desert') yields[t.res] += CONFIG.getProb(t.tok); });
+        const values = Object.values(yields);
+        return (Math.max(...values) - Math.min(...values)) * 80;
     }
+];
 
-    getNeighbors() {
-        const directions = [[1, -1], [0, -1], [-1, 0], [-1, 1],,];
-        return directions.map(([dq, dr]) => new HexCoord(this.q + dq, this.r + dr));
+const shuffle = (arr) => {
+    for (let i = arr.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [arr[i], arr[j]] = [arr[j], arr[i]];
     }
-}
+    return arr;
+};
 
 class CatanBoard {
-    constructor(config) {
-        this.config = config;
-        this.tiles = new Map();
-    }
-
-    clear() { this.tiles.clear(); }
-    setTile(key, tileData) { this.tiles.set(key, tileData); }
-    getTile(key) { return this.tiles.get(key); }
-    getAllTiles() { return Array.from(this.tiles.values()); }
-}
-
-class CatanBoardGenerator {
-    constructor(config) {
-        this.config = config;
-    }
-
-    _shuffle(array) {
-        return [...array].sort(() => Math.random() - 0.5);
-    }
-
-    /**
-     * Main Generation Entry Point
-     */
-    generate(board) {
-        const landCoords = this._getLandCoordinates();
-        
-        // Phase 1: Fast initial layout
-        this._generateInitialLayout(board, landCoords);
-        
-        // Phase 2: Combined iterative optimization
-        let optimized = false;
-        for (let globalPass = 0; globalPass < 500; globalPass++) {
-            if (this._optimizeTokensAndResources(board)) {
-                optimized = true;
-                break;
+    constructor() {
+        this.tiles = [];
+        let id = 0;
+        for (let q = -3; q <= 3; q++) {
+            for (let r = Math.max(-3, -3 - q); r <= Math.min(3, 3 - q); r++) {
+                const s = -q - r
+                this.tiles.push({
+                    id: id++,
+                    q, r, s,
+                    isWater: Math.max(Math.abs(q),
+                        Math.abs(r),
+                        Math.abs(s)) === 3
+                });
             }
-            this._jiggleLayout(board);
         }
 
-        if (!optimized) return false;
+        this.tiles.sort((a, b) => (a.r + a.q / 2) - (b.r + b.q / 2) || a.q - b.q);
+        this.land = this.tiles.filter(t => !t.isWater);
 
-        this._injectOptimizedWaterRing(board);
-        return true;
+        this._generatePorts();
+        this.intersections = this._buildIntersections();
     }
 
-    _generateInitialLayout(board, coords) {
-        board.clear();
-        const landPool = this._shuffle(Object.entries(this.config.land).flatMap(([key, s]) => Array(s.count).fill(key)));
-        coords.forEach((coord, i) => {
-            const resKey = landPool[i];
-            board.setTile(coord.key(), { coord, resource: resKey, name: this.config.land[resKey].name, token: null });
+    getN(t) {
+        return this.tiles.filter(o => (Math.abs(t.q - o.q) + Math.abs(t.r - o.r) + Math.abs(t.s - o.s)) === 2);
+    }
+
+    _generatePorts() {
+        const water = this.tiles.filter(t => t.isWater).sort((a, b) => Math.atan2(a.r, a.q) - Math.atan2(b.r, b.q));
+        const ports = shuffle([...CONFIG.ports]);
+
+        water.forEach((t, i) => i % 2 === 0 && (t.port = (i / 2) % 2 === 0 ? ports.pop() : '3:1'));
+    }
+
+    _buildIntersections() {
+        const map = new Map();
+        this.tiles.forEach(t1 => {
+            const n1 = this.getN(t1);
+            n1.forEach(t2 => {
+                n1.forEach(t3 => {
+                    if (t2 !== t3 && this.getN(t2).includes(t3)) {
+                        map.set([t1.id, t2.id, t3.id].sort((a, b) => a - b).join('|'), [t1, t2, t3]);
+                    }
+                });
+            });
         });
-    }
-
-    _jiggleLayout(board) {
-        const tiles = board.getAllTiles().filter(t => t.resource !== 'wa');
-        const t1 = tiles[Math.floor(Math.random() * tiles.length)];
-        const t2 = tiles[Math.floor(Math.random() * tiles.length)];
-        if (t1 !== t2) {
-            const tempRes = t1.resource; const tempName = t1.name;
-            t1.resource = t2.resource; t1.name = t2.name;
-            t2.resource = tempRes; t2.name = tempName;
-            
-            // KORREKTUR: Tokens nach dem Jiggle resetten, damit sie neu ausgewürfelt werden
-            t1.token = null;
-            t2.token = null;
-        }
-    }
-
-    _optimizeTokensAndResources(board) {
-        const landTiles = board.getAllTiles();
-        const maxRadius = Math.max(...landTiles.map(t => t.coord.distanceFromCenter()));
-
-        // 1. STRUKTURELLE REPARATUR (NUR Ressourcen tauschen, KEINE Tokens mitwandern lassen)
-        for (let pass = 0; pass < 200; pass++) {
-            let layoutConflicts = false;
-
-            for (const tile of landTiles) {
-                const neighbors = tile.coord.getNeighbors().map(c => board.getTile(c.key())).filter(Boolean);
-                const isOuterDesert = (tile.resource === 'de' && tile.coord.distanceFromCenter() === maxRadius);
-                const isCluster = (tile.resource !== 'de' && neighbors.filter(n => n.resource === tile.resource).length >= 2);
-
-                if (isOuterDesert || isCluster) {
-                    layoutConflicts = true;
-                    const target = landTiles[Math.floor(Math.random() * landTiles.length)];
-                    
-                    // KORREKTUR: Wir tauschen NUR die Ressourceneigenschaften, das Token bleibt starr auf der Koordinate!
-                    const tempRes = tile.resource; const tempName = tile.name;
-                    tile.resource = target.resource; tile.name = target.name;
-                    target.resource = tempRes; target.name = tempName;
-                }
-            }
-            if (!layoutConflicts) break;
-        }
-
-        // 2. INITIALE TOKEN-VERTEILUNG (NUR auf aktiven Feldern, Wüste bleibt leer)
-        const activeTiles = landTiles.filter(t => this.config.land[t.resource].active !== false);
-        const desertTiles = landTiles.filter(t => this.config.land[t.resource].active === false);
-        
-        // Wüste explizit leeren
-        desertTiles.forEach(t => t.token = null);
-
-        // Tokens frisch mischen und verteilen
-        const shuffledTokens = this._shuffle(this.config.tokens);
-        activeTiles.forEach((tile, i) => tile.token = shuffledTokens[i]);
-
-        // 3. TOKEN REPARATUR (Greedy Swap nur auf aktiven Feldern)
-        for (let pass = 0; pass < 600; pass++) {
-            let tokenConflicts = false;
-
-            for (const tile of activeTiles) {
-                if (this._hasTokenConflict(tile, board)) {
-                    tokenConflicts = true;
-                    const targetTile = activeTiles[Math.floor(Math.random() * activeTiles.length)];
-                    
-                    const temp = tile.token;
-                    tile.token = targetTile.token;
-                    targetTile.token = temp;
-                }
-            }
-
-            // Gegenkontrolle: Wüste darf niemals ein Token erhalten haben
-            desertTiles.forEach(t => t.token = null);
-
-            if (!tokenConflicts && this._validateGlobalVariance(board)) {
-                return true; // Spielfeld ist perfekt
-            }
-        }
-        return false;
-    }
-
-    _hasTokenConflict(tile, board) {
-        const neighbors = tile.coord.getNeighbors().map(c => board.getTile(c.key())).filter(Boolean);
-        const token = tile.token;
-
-        if (!token) return false; // Keine Zahl = kein Konflikt
-
-        if (neighbors.some(n => n.token === token)) return true;
-        if ((token === 6 || token === 8) && neighbors.some(n => n.token === 6 || n.token === 8)) return true;
-
-        if (token === 6 || token === 8) {
-            const sameResourceTiles = board.getAllTiles().filter(t => t.resource === tile.resource && t !== tile);
-            if (sameResourceTiles.some(t => t.token === 6 || t.token === 8)) return true;
-        }
-
-        const currentPips = this.config.pips[token];
-        for (let j = 0; j < neighbors.length; j++) {
-            for (let k = j + 1; k < neighbors.length; k++) {
-                const n1 = neighbors[j], n2 = neighbors[k];
-                if (n1.token && n2.token && n1.coord.getNeighbors().some(c => c.key() === n2.coord.key())) {
-                    if ((currentPips + this.config.pips[n1.token] + this.config.pips[n2.token]) > 11) return true;
-                }
-            }
-        }
-        return false;
-    }
-
-    _validateGlobalVariance(board) {
-        const weights = {};
-        board.getAllTiles().forEach(t => {
-            if (t.resource !== 'de' && t.resource !== 'wa') {
-                weights[t.resource] = (weights[t.resource] || 0) + (this.config.pips[t.token] || 0);
-            }
-        });
-        const values = Object.values(weights);
-        return (Math.max(...values) - Math.min(...values)) <= 2;
-    }
-
-    _getLandCoordinates() {
-        const landPool = Object.entries(this.config.land).flatMap(([key, s]) => Array(s.count).fill(key));
-        const landRadius = Math.round((Math.sqrt(12 * landPool.length - 3) - 3) / 6);
-        const landCoords = [];
-        for (let q = -landRadius; q <= landRadius; q++) {
-            for (let r = -landRadius; r <= landRadius; r++) {
-                const coord = new HexCoord(q, r);
-                if (coord.distanceFromCenter() <= landRadius) landCoords.push(coord);
-            }
-        }
-        return landCoords;
-    }
-
-    _injectOptimizedWaterRing(board) {
-        const landTiles = board.getAllTiles();
-        const landRadius = Math.max(...landTiles.map(t => t.coord.distanceFromCenter()));
-        const waterRadius = landRadius + 1;
-        const waterCoords = [];
-
-        for (let q = -waterRadius; q <= waterRadius; q++) {
-            for (let r = -waterRadius; r <= waterRadius; r++) {
-                const coord = new HexCoord(q, r);
-                if (coord.distanceFromCenter() === waterRadius) waterCoords.push(coord);
-            }
-        }
-        waterCoords.sort((a, b) => Math.atan2(a.r, a.q) - Math.atan2(b.r, b.q));
-
-        const ports31 = this.config.ports.filter(p => p.startsWith('3:1'));
-        const ports21 = this._shuffle(this.config.ports.filter(p => p.startsWith('2:1')));
-        let idx31 = 0, idx21 = 0;
-
-        waterCoords.forEach((coord, i) => {
-            let label = '';
-            if (i % 2 === 0) {
-                if ((i / 2) % 2 === 0 && idx31 < ports31.length) label = ports31[idx31++];
-                else if (idx21 < ports21.length) label = ports21[idx21++];
-                else if (idx31 < ports31.length) label = ports31[idx31++];
-            }
-            board.setTile(coord.key(), { coord, resource: 'wa', name: 'Water', label: label, token: null });
-        });
+        return Array.from(map.values()).sort((a, b) => (a.reduce((s, t) => s + (t.r + t.q / 2), 0) - b.reduce((s, t) => s + (t.r + t.q / 2), 0)) || (a.reduce((s, t) => s + t.q, 0) - b.reduce((s, t) => s + t.q, 0)));
     }
 }
 
+class IterativeOptimizer {
+    _score(b) { return RULES.reduce((sum, rule) => sum + rule(b), 0); }
+    _state(b) { return b.land.map(t => ({ res: t.res, tok: t.tok })); }
+    _load(b, s) { b.land.forEach((t, i) => { t.res = s[i].res; t.tok = s[i].tok; }); }
 
-// class CatanUIRenderer {
-//     constructor(targetId) {
-//         this.container = document.getElementById(targetId);
-//     }
+    optimize(b) {
+        b._generatePorts();
+        const res = shuffle(Object.entries(CONFIG.landPool).flatMap(([k, c]) => Array(c).fill(k)));
+        const toks = shuffle([...CONFIG.tokens]);
 
-//     render(board) {
-//         this.container.innerHTML = '';
+        let tIdx = 0;
+        b.land.forEach((t, i) => { t.res = res[i]; t.tok = (t.res === 'desert') ? 7 : toks[tIdx++]; });
 
-//         const rows = {};
-//         board.getAllTiles().forEach(tile => {
-//             const rowIndex = tile.coord.r;
-//             if (!rows[rowIndex]) rows[rowIndex] = [];
-//             rows[rowIndex].push(tile);
-//         });
+        let temp = 1500;
+        let current = this._score(b);
+        let bestState = this._state(b);
+        let best = current;
 
-//         Object.keys(rows).sort((a, b) => Number(a) - Number(b)).forEach(rowIndex => {
-//             const rowEl = document.createElement('div');
-//             rowEl.className = 'hex-row';
+        for (let i = 0; i < 40000; i++) {
+            const backup = this._state(b);
+            const A = b.land[Math.floor(Math.random() * b.land.length)];
+            const B = b.land[Math.floor(Math.random() * b.land.length)];
 
-//             rows[rowIndex].sort((a, b) => a.coord.q - b.coord.q).forEach(tile => {
-//                 const el = document.createElement('div');
-//                 el.className = `hex ${tile.resource}`;
+            if (Math.random() < 0.5) [A.res, B.res] = [B.res, A.res];
+            else[A.tok, B.tok] = [B.tok, A.tok];
 
-//                 if (tile.resource === 'wa') {
-//                     el.innerHTML = `<span class="label">${tile.label}</span>`;
-//                 } else {
-//                     const hasToken = tile.token ? `<div class="token ${tile.token === 6 || tile.token === 8 ? 'red' : ''}">${tile.token}</div>` : '';
-//                     el.innerHTML = `${hasToken}<span class="label">${tile.name}</span>`;
-//                 }
-//                 rowEl.appendChild(el);
-//             });
-//             this.container.appendChild(rowEl);
-//         });
-//     }
-// }
+            const s = b.land.find(t => t.tok === 7);
+            const d = b.land.find(t => t.res === 'desert');
+            if (d && d.tok !== 7 && s) [d.tok, s.tok] = [7, d.tok];
+
+            const next = this._score(b);
+            if (next < current || Math.random() < Math.exp((current - next) / temp)) {
+                current = next;
+                if (current < best) {
+                    best = current;
+                    bestState = this._state(b);
+                }
+            } else {
+                this._load(b, backup);
+            }
+            temp *= 0.9992;
+        }
+        this._load(b, bestState);
+    }
+}
 
 class CatanUIRenderer {
-    constructor(targetId, statsId, config) {
-        this.container = document.getElementById(targetId);
-        this.statsContainer = document.getElementById(statsId);
-        this.config = config;
-    }
+    render(board) {
+        const boardEl = document.getElementById('board');
+        const overlayEl = document.getElementById('overlay');
+        boardEl.innerHTML = overlayEl.innerHTML = '';
 
-    /**
-     * Helper mapping values to a smooth HSL gradient (0 = Red, 60 = Yellow, 120 = Green)
-     * @private
-     */
-    _getColorForDeviation(val, avg, maxDev = 0.08) {
-        if (avg === 0) return 'hsl(60, 95%, 45%)';
-        const deviation = (val - avg) / avg;
-        let factor = Math.max(-1, Math.min(1, deviation / maxDev));
-        let hue = 60 + (factor * 60); 
-        return `hsl(${hue}, 90%, 45%)`;
-    }
-
-    /**
-     * Renders placeholder hex tiles to deliver instant visual loading feedback.
-     */
-    showLoadingSkeleton(board) {
-        this.container.innerHTML = '';
-        const rows = {};
-        board.getAllTiles().forEach(tile => {
-            if (!rows[tile.coord.r]) rows[tile.coord.r] = [];
-            rows[tile.coord.r].push(tile);
-        });
-
-        Object.keys(rows).sort((a, b) => Number(a) - Number(b)).forEach(rowIndex => {
+        let idx = 0;
+        [1, 2, 3, 4, 3, 4, 3, 4, 3, 4, 3, 2, 1].forEach(len => {
             const rowEl = document.createElement('div');
-            rowEl.className = 'tile-row';
-            rows[rowIndex].sort((a, b) => a.coord.q - b.coord.q).forEach(() => {
-                const el = document.createElement('div');
-                el.className = 'tile';
-                el.innerHTML = `<div class="hex skeleton"></span>`;
-                rowEl.appendChild(el);
-            });
-            this.container.appendChild(rowEl);
-        });
-    }
+            rowEl.className = 'row flex flex--center';
 
-    /**
-     * Renders the complete finalized node mappings onto the target containers.
-     */
-    render(board, showHeatmap) {
-        this.container.innerHTML = '';
-        this._renderStats(board);
+            for (let i = 0; i < len; i++) {
+                const tile = board.tiles[idx++];
+                const clone = document.getElementById('tile-template').content.cloneNode(true);
+                const div = clone.querySelector('.tile');
+                const tokEl = clone.querySelector('.token');
 
-        const rows = {};
-        board.getAllTiles().forEach(tile => {
-            if (!rows[tile.coord.r]) rows[tile.coord.r] = [];
-            rows[tile.coord.r].push(tile);
-        });
-
-        Object.keys(rows).sort((a, b) => Number(a) - Number(b)).forEach(rowIndex => {
-            const rowEl = document.createElement('div');
-            rowEl.className = 'tile-row';
-
-            rows[rowIndex].sort((a, b) => a.coord.q - b.coord.q).forEach(tile => {
-                const el = document.createElement('div');
-                el.className = `tile ${tile.resource}`;
-                
-                const pips = this.config.pips[tile.token] || 0;
-                const probPct = ((pips / 36) * 100).toFixed(2) + '%';
-
-                if (tile.resource !== 'wa' && tile.resource !== 'de' && tile.token) {
-                    el.setAttribute('data-prob', `Dice Chance: ${probPct}`);
-                }
-
-                if (tile.resource === 'wa') {
-                    el.innerHTML = `<span class="label port-label">${tile.label}</span>`;
+                div.classList.add(tile.res || 'water');
+                if (tile.isWater) {
+                    if (tile.port) {
+                        div.classList.add(tile.port);
+                        tokEl.outerHTML = `<span class="label">${tile.port.includes('3:1') ? '3:1' : '2:1'}</span>`
+                    };
                 } else {
-                    const hasToken = tile.token ? `<div class="token ${tile.token === 6 || tile.token === 8 ? 'red' : ''}">${tile.token}${tile.token === 6 || tile.token === 9 ? '.' : ''}</div>` : '';
-                    // el.innerHTML = `${hasToken}<span class="label">${tile.name}</span>`;
-                    el.innerHTML = `${hasToken}`;
+                    div.classList.add(`t${tile.tok}`);
+                    tokEl.textContent = tile.tok;
+                    const prob = tile.res != 'desert' ? CONFIG.getProb(tile.tok).toFixed(1) : 16.6
+                    div.setAttribute('data-prob', `${tile.res.charAt(0).toUpperCase() + tile.res.slice(1)}: ${prob}%`);
                 }
-                el.innerHTML += `<div class="hex ${tile.resource}"></span>`
-                rowEl.appendChild(el);
-            });
-            this.container.appendChild(rowEl);
-        });
-
-        if (showHeatmap) {
-            this._renderIntersectionLayer(board);
-        }
-    }
-
-    /**
-     * Aggregates total adjacent intersection probabilities into a single, unique text badge per vertex.
-     * Fixed duplicate rendering bug via proximity snapping.
-     * @private
-     */
-    _renderIntersectionLayer(board) {
-        const corners = new Map();
-        const hexWidth = 104, hexHeight = 93;  
-        const snapTolerance = 10; // Pixels threshold to merge identical corner nodes
-
-        board.getAllTiles().forEach(tile => {
-            if (tile.resource === 'wa') return;
-            const prob = (this.config.pips[tile.token] || 0) / 36;
-            const x = (tile.coord.q + tile.coord.r / 2) * hexWidth;
-            const y = tile.coord.r * hexHeight;
-
-            const angleOffsets = [
-                { dx: 0, dy: -57.5 }, { dx: 50, dy: -28.75 }, { dx: 50, dy: 28.75 },
-                { dx: 0, dy: 57.5 }, { dx: -50, dy: 28.75 }, { dx: -50, dy: -28.75 }
-            ];
-
-            angleOffsets.forEach(offset => {
-                const cx = Math.round(x + offset.dx);
-                const cy = Math.round(y + offset.dy);
-                
-                // CRITICAL FIX: Scan existing corners for a matching close-proximity vertex
-                let matchedKey = null;
-                for (const existingKey of corners.keys()) {
-                    const [ex, ey] = existingKey.split(',').map(Number);
-                    if (Math.abs(ex - cx) <= snapTolerance && Math.abs(ey - cy) <= snapTolerance) {
-                        matchedKey = existingKey;
-                        break;
-                    }
-                }
-
-                // If no nearby corner exists, initialize a new unique point
-                if (!matchedKey) {
-                    matchedKey = `${cx},${cy}`;
-                    corners.set(matchedKey, { cx, cy, totalProb: 0 });
-                }
-                
-                corners.get(matchedKey).totalProb += prob;
-            });
-        });
-
-        const cornerArr = Array.from(corners.values());
-        const avgVertexProb = cornerArr.reduce((acc, c) => acc + c.totalProb, 0) / cornerArr.length;
-
-        corners.forEach(c => {
-            const dot = document.createElement('div');
-            dot.className = 'intersection-dot';
-            dot.style.left = `calc(50% + ${c.cx}px - 16px)`;
-            dot.style.top = `calc(50% + ${c.cy}px - 10px)`;
-            
-            dot.style.backgroundColor = this._getColorForDeviation(c.totalProb, avgVertexProb, 0.4);
-            
-            // Displays the aggregated mathematical sum (0% - 100%) exactly once per intersection
-            dot.textContent = `${(c.totalProb * 100).toFixed(0)}%`;
-            this.container.appendChild(dot);
-        });
-    }
-
-    /**
-     * Formats global statistics into color-coded margin tags beneath the hex grids.
-     * @private
-     */
-    _renderStats(board) {
-        const stats = {};
-        let activeCategoriesCount = 0;
-        let combinedProbSum = 0;
-
-        board.getAllTiles().forEach(t => {
-            if (t.resource !== 'wa' && t.resource !== 'de') {
-                stats[t.name] = (stats[t.name] || 0) + ((this.config.pips[t.token] || 0) / 36);
+                rowEl.appendChild(clone);
             }
+            boardEl.appendChild(rowEl);
         });
 
-        Object.values(stats).forEach(v => { combinedProbSum += v; activeCategoriesCount++; });
-        const avgCategoryProb = combinedProbSum / activeCategoriesCount;
-        
-        this.statsContainer.innerHTML = ``;
-        Object.entries(stats).forEach(([name, totalProb]) => {
-            const percentage = (totalProb * 100).toFixed(1) + '%';
-            const badgeColor = this._getColorForDeviation(totalProb, avgCategoryProb, 0.1);
-            
-            this.statsContainer.innerHTML += `
-                <div class="stat-badge" style="border-left: 4px solid ${badgeColor}; padding-left: 6px;">
-                    <strong>${name}:</strong> ${percentage}
-                </div>`;
+        const stats = { lumber: 0, wool: 0, grain: 0, ore: 0, brick: 0 };
+        board.land.filter(t => t.res !== 'desert').forEach(t => stats[t.res] += CONFIG.getProb(t.tok));
+        const statsValues = Object.values(stats);
+        const statsAvg = statsValues.reduce((a, b) => a + b, 0) / statsValues.length;
+        Object.entries(stats).forEach(([k, v]) => {
+            const el = document.querySelector(`#stats .${k}`);
+            el.textContent = v.toFixed(0);
+            el.style.color = this._getColor(v, statsAvg, 8);
+        });
+
+        const interValues = board.intersections.map(inter =>
+            inter ? inter.reduce((s, t) => s + CONFIG.getProb(t.tok), 0) : 0
+        );
+        const interAvg = interValues.reduce((a, b) => a + b, 0) / (interValues.length || 1);
+
+        let vIdx = 0;
+        [2, 4, 6, 6, 6, 6, 6, 6, 6, 4, 2].forEach(count => {
+            const rEl = document.createElement('div');
+            rEl.className = 'row flex flex--center';
+
+            for (let i = 0; i < count; i++) {
+                const pEl = document.createElement('div');
+                pEl.className = 'point flex flex--center';
+                const probSum = interValues[vIdx++];
+                pEl.textContent = probSum.toFixed(0);
+                pEl.style.background = this._getColor(probSum, interAvg, 5); 
+                rEl.appendChild(pEl);
+            }
+            overlayEl.appendChild(rEl);
         });
     }
+
+    _getColor(value, target, factor = 12) {
+        const hue = Math.max(0, Math.min(120, 60 + (value - target) * factor));
+        return `hsl(${hue}, 90%, 45%)`;
+    };
 }
+
+document.addEventListener("DOMContentLoaded", () => {
+    const board = new CatanBoard()
+    const renderer = new CatanUIRenderer();
+    const optimizer = new IterativeOptimizer()
+    const dice = document.getElementById("dice");
+    const boardEl = document.getElementById("board");
+    const statsBtn = document.getElementById("toggle-stats");
+    const wrapperEl = document.getElementById('board-wrapper');
+
+    const handleGeneration = () => {
+        wrapperEl.classList.add('loading');
+        boardEl.removeAttribute('data-roll-val');
+        setTimeout(() => {
+            optimizer.optimize(board);
+            renderer.render(board);
+            wrapperEl.classList.remove('loading');
+        }, 0);
+    };
+
+    document.getElementById('trigger').onclick = handleGeneration;
+    document.getElementById("dice-reset").onclick = (e) => {
+        e.stopPropagation();
+        boardEl.removeAttribute('data-roll-val');
+    };
+
+    statsBtn.onclick = () => {
+        statsBtn.classList.toggle('btn--primary');
+        wrapperEl.classList.toggle('hide-stats');
+    };
+
+    dice.onclick = () => {
+        let total = 0;
+        dice.querySelectorAll("div").forEach(die => {
+            die.classList.remove("rolling");
+            void die.offsetWidth;
+            const roll = Math.floor(Math.random() * 6) + 1;
+            total += roll;
+            die.className = `d${roll} rolling`;
+        });
+        boardEl.dataset.rollVal = total;
+    };
+
+    handleGeneration();
+});
