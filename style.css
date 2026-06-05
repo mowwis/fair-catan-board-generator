@@ -6,15 +6,25 @@ main {
     gap: 2em;
     width: 100%;
     overflow: hidden;
+    text-align: center;
+}
+
+.btn:has(h1) {
+    padding: 0;
+    border: none;
+    border-radius: 0;
 }
 
 h1 {
     color: var(--color-gray-000);
     padding: 1rem 2rem;
-    font-size: clamp(2rem, 5vw, 2.5rem);
-    text-align: center;
+    font-size: clamp(1.6rem, 5vw, 2.5rem);
     font-weight: 900;
-    background-color: var(--color-gray-100);
+    background-color: var(--color-gray-090);
+
+    &:hover {
+        background-color: var(--color-gray-100);
+    }
 }
 
 #board-wrapper {
@@ -24,7 +34,7 @@ h1 {
     aspect-ratio: 1 / 1.1;
     container-type: inline-size;
 
-    button {
+    menu {
         position: absolute;
         top: 0;
         right: 0;

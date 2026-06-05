@@ -14,21 +14,21 @@
 
     <main class="flex-col flex--center">
         <header class="flex-col items-center">
-            <h1>Fair Catan Boards</h1>
-            <p>Generate balanced Catan maps for fun play.</p>
+            <button class="btn" id="trigger">
+                <h1>Generate Fair Board</h1>
+            </button>
+            <p>Click to generate balanced Catan maps for fun play.</p>
         </header>
-
-        <menu class="flex items-center">
-            <button class="btn btn--primary" id="trigger">Generate New Board</button>
-            <button class="btn btn--icon" title="Settings"><i class="fa-solid fa-gear"></i></button>
-        </menu>
 
         <div id="board-wrapper" class="flex-col flex--center hide-stats">
             <div id="board" class="flex-col flex--center"></div>
             <div id="overlay" class="flex-col flex--center"></div>
 
-            <button class="btn btn--icon" id="toggle-stats" title="Toggle Board Statistics"><i
-                    class="fa-solid fa-chart-simple"></i></button>
+            <menu class="flex items-center">
+                <button class="btn btn--icon" title="Settings for Generation"><i class="fa-solid fa-gear"></i></button>
+                <button class="btn btn--icon" id="toggle-stats" title="Toggle Board Statistics"><i
+                        class="fa-solid fa-chart-simple"></i></button>
+            </menu>
 
             <div id="stats" class="flex flex--center">
                 <div class="lumber flex flex--center">33</div>
@@ -38,7 +38,6 @@
                 <div class="brick flex flex--center">37</div>
             </div>
         </div>
-
 
         <div id="dice" class="flex flex--center" title="Roll Dice">
             <div class="d3"></div>
