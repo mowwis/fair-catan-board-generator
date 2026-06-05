@@ -9,13 +9,13 @@ main {
     text-align: center;
 }
 
-.btn:has(h1) {
+header .btn {
     padding: 0;
     border: none;
     border-radius: 0;
 }
 
-h1 {
+header h1 {
     color: var(--color-gray-000);
     padding: 1rem 2rem;
     font-size: clamp(1.6rem, 5vw, 2.5rem);
@@ -27,8 +27,13 @@ h1 {
     }
 }
 
+header p {
+    font-size: clamp(.8rem, 2.5vw, 1rem);
+}
+
+
 #board-wrapper {
-    width: min(95vw, calc((100dvh - 280px) / 1.1), 800px);
+    width: min(98vw, calc((90dvh - 210px) / 1.1), 800px);
     position: relative;
     user-select: none;
     aspect-ratio: 1 / 1.1;
@@ -312,7 +317,7 @@ h1 {
 
 #stats {
     gap: 4cqw;
-    bottom: -7cqw;
+    bottom: -5.5cqw;
     position: absolute;
     font-size: 2.3cqw;
     font-weight: 900;
@@ -357,16 +362,16 @@ h1 {
 }
 
 #dice {
-    gap: 2rem;
+    gap: .5em;
     cursor: pointer;
-    padding: .5em 3rem;
+    padding: .2em .9em .5em;
     font-size: clamp(3rem, 7vh, 5rem);
     position: relative;
     -webkit-tap-highlight-color: transparent;
 
     button {
+        right: 0;
         color: var(--color-gray-030);
-        right: -1rem;
         position: absolute;
     }
 
