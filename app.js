@@ -6,46 +6,41 @@ const CONFIG = {
 };
 
 const RULES = [
-    // 1. Keine Wüste an das Wasser
+    // Keine Wüste am Wasser
+    // b => (b.land.some(t => t.res === 'desert' && b.getN(t).some(n => n.isWater)) ? 1 : 0) * 1000,
+
+    // Keine gleichen Zahlen nebeneinander (inkl. 6/8)
+    b => b.land.reduce((sum, t) => sum + (t.tok === 7 ? 0 : b.getLandN(t).filter(n => n.id < t.id && (n.tok === t.tok || ((n.tok === 6 || n.tok === 8) && (t.tok === 6 || t.tok === 8)))).length), 0) * 5000,
+    // Keine gleichen Zahlen auf derselben Ressourcenart (inkl. 6/8)
+    b => b.land.reduce((sum, t) => sum + (t.tok === 7 ? 0 : b.land.filter(o => o.id < t.id && o.res === t.res && (o.tok === t.tok || ((o.tok === 6 || o.tok === 8) && (t.tok === 6 || t.tok === 8)))).length), 0) * 3000,
+    // Maximal 2 gleiche Ressourcen an Kreuzung
+    b => b.intersections.reduce((sum, inter) => {
+        const max = 2; // 1-3
+        const resList = inter.filter(t => !t.isWater && t.res !== 'desert').map(t => t.res);
+        return sum + Math.max(0, resList.filter((res, i) => resList.indexOf(res) !== i).length - (max - 1));
+    }, 0) * 1500,
+    // Keine gleichen Zahlen auf Holz und Lehm
+    b => b.land.filter(t => t.res === 'lumber' && t.tok !== 7).reduce((sum, l) => sum + b.land.filter(o => o.res === 'brick' && o.tok === l.tok).length, 0) * 1000,
+    // Intersection Fairness
     b => {
-        const d = b.land.find(t => t.res === 'desert');
-        return (d && b.getN(d).some(n => n.isWater) ? 1 : 0) * 10000;
-    },
-    // 2. Maximal 2 gleiche Ressourcen nebeneinander
-    b => b.land.reduce((sum, t) => sum + Math.max(0, b.getN(t).filter(n => n.res === t.res).length - 2), 0) * 8000,
-    // 3. KEINE gleichen Zahlen nebeneinander (nicht nur rote Zahlen!)
-    b => b.land.reduce((sum, t) => sum + b.getN(t).filter(n => n.tok === t.tok && t.tok !== 7).length, 0) * 12000,
-    // 4. Gleiche Zahlen dürfen nicht auf derselben Ressourcen-Art liegen (z.B. keine zwei 5er auf Erz)
-    b => {
-        let penalty = 0;
-        const seen = {};
-        b.land.forEach(t => {
-            if (t.tok === 7) return;
-            if (!seen[t.res]) seen[t.res] = [];
-            if (seen[t.res].includes(t.tok)) penalty++;
-            seen[t.res].push(t.tok);
+        const weights = { 3: 100, 2: 50, 1: 20 }, groups = { 3: [], 2: [], 1: [] };
+        b.intersections.forEach(inter => {
+            const landCount = inter.filter(t => !t.isWater).length;
+            if (landCount === 0) return;
+            groups[landCount].push(inter.reduce((s, t) => s + ((t.isWater || t.tok === 7) ? 0 : CONFIG.getProb(t.tok)), 0));
         });
-        return penalty * 5000;
+        return Object.entries(groups).reduce((total, [count, list]) => {
+            if (!list.length) return total;
+            const avg = list.reduce((a, b) => a + b, 0) / list.length;
+            return total + list.reduce((s, p) => s + Math.pow(p - avg, 2), 0) * weights[count];
+        }, 0) * 5;
     },
-    // 5. Die gleiche Zahl darf nicht gleichzeitig auf Holz (lumber) und Lehm (brick) liegen
+    // Global Ressource-Balance
     b => {
-        const lumberTokens = b.land.filter(t => t.res === 'lumber').map(t => t.tok);
-        const brickTokens = b.land.filter(t => t.res === 'brick').map(t => t.tok);
-        return lumberTokens.filter(tok => tok !== 7 && brickTokens.includes(tok)).length * 1500;
+        const yields = Object.values(b.getYields());
+        const avg = yields.reduce((a, b) => a + b, 0) / yields.length;
+        return yields.reduce((sum, y) => sum + Math.pow(y - avg, 2), 0) * 15;
     },
-    // 6. Intersection Fairness (Kreuzungspunkte balancieren)
-    b => {
-        const probs = b.intersections.map(i => i.reduce((s, t) => s + CONFIG.getProb(t.tok), 0));
-        const avg = probs.reduce((a, x) => a + x, 0) / probs.length;
-        return probs.reduce((sum, p) => sum + Math.abs(p - avg), 0) * 15;
-    },
-    // 7. Globale Ressourcen-Balance (Gesamtwahrscheinlichkeit aller Rohstoffe angleichen)
-    b => {
-        const yields = { lumber: 0, wool: 0, grain: 0, ore: 0, brick: 0 };
-        b.land.forEach(t => { if (t.res !== 'desert') yields[t.res] += CONFIG.getProb(t.tok); });
-        const values = Object.values(yields);
-        return (Math.max(...values) - Math.min(...values)) * 80;
-    }
 ];
 
 const shuffle = (arr) => {
@@ -59,97 +54,117 @@ const shuffle = (arr) => {
 class CatanBoard {
     constructor() {
         this.tiles = [];
+        this.intersections = [];
+        this._buildGrid();
+        this.land = this.tiles.filter(t => !t.isWater);
+        this.generatePorts();
+        this._buildIntersections();
+    }
+
+    _buildGrid() {
         let id = 0;
         for (let q = -3; q <= 3; q++) {
-            for (let r = Math.max(-3, -3 - q); r <= Math.min(3, 3 - q); r++) {
-                const s = -q - r
+            const rMin = Math.max(-3, -3 - q), rMax = Math.min(3, 3 - q);
+            for (let r = rMin; r <= rMax; r++) {
+                const s = -q - r;
                 this.tiles.push({
-                    id: id++,
-                    q, r, s,
-                    isWater: Math.max(Math.abs(q),
-                        Math.abs(r),
-                        Math.abs(s)) === 3
+                    id: id++, q, r, s,
+                    isWater: Math.max(Math.abs(q), Math.abs(r), Math.abs(s)) === 3
                 });
             }
         }
-
         this.tiles.sort((a, b) => (a.r + a.q / 2) - (b.r + b.q / 2) || a.q - b.q);
-        this.land = this.tiles.filter(t => !t.isWater);
-
-        this._generatePorts();
-        this.intersections = this._buildIntersections();
-    }
-
-    getN(t) {
-        return this.tiles.filter(o => (Math.abs(t.q - o.q) + Math.abs(t.r - o.r) + Math.abs(t.s - o.s)) === 2);
-    }
-
-    _generatePorts() {
-        const water = this.tiles.filter(t => t.isWater).sort((a, b) => Math.atan2(a.r, a.q) - Math.atan2(b.r, b.q));
-        const ports = shuffle([...CONFIG.ports]);
-
-        water.forEach((t, i) => i % 2 === 0 && (t.port = (i / 2) % 2 === 0 ? ports.pop() : '3:1'));
     }
 
     _buildIntersections() {
         const map = new Map();
         this.tiles.forEach(t1 => {
-            const n1 = this.getN(t1);
-            n1.forEach(t2 => {
-                n1.forEach(t3 => {
-                    if (t2 !== t3 && this.getN(t2).includes(t3)) {
-                        map.set([t1.id, t2.id, t3.id].sort((a, b) => a - b).join('|'), [t1, t2, t3]);
+            const neighbors = this.getN(t1);
+            neighbors.forEach(t2 => {
+                neighbors.forEach(t3 => {
+                    if (t2.id < t3.id && this.getN(t2).includes(t3)) {
+                        const key = [t1.id, t2.id, t3.id].sort((a, b) => a - b).join('|');
+                        map.set(key, [t1, t2, t3]);
                     }
                 });
             });
         });
-        return Array.from(map.values()).sort((a, b) => (a.reduce((s, t) => s + (t.r + t.q / 2), 0) - b.reduce((s, t) => s + (t.r + t.q / 2), 0)) || (a.reduce((s, t) => s + t.q, 0) - b.reduce((s, t) => s + t.q, 0)));
+
+        const score = (arr) => arr.reduce((s, t) => s + (t.r + t.q / 2), 0);
+        const qScore = (arr) => arr.reduce((s, t) => s + t.q, 0);
+        this.intersections = Array.from(map.values()).sort((a, b) => score(a) - score(b) || qScore(a) - qScore(b));
+    }
+
+    generatePorts() {
+        const water = this.tiles.filter(t => t.isWater).sort((a, b) => Math.atan2(a.r, a.q) - Math.atan2(b.r, b.q));
+        const ports = shuffle([...CONFIG.ports]);
+        water.forEach((t, i) => i % 2 === 0 && (t.port = (i / 2) % 2 === 0 ? ports.pop() : '3:1'));
+    }
+
+    getN(t) { return this.tiles.filter(o => (Math.abs(t.q - o.q) + Math.abs(t.r - o.r) + Math.abs(t.s - o.s)) === 2); }
+    getLandN(t) { return this.getN(t).filter(n => !n.isWater); }
+    getIntersectionProbs() { return this.intersections.map(inter => inter.reduce((sum, t) => sum + CONFIG.getProb(t.tok), 0)); }
+
+    getYields() {
+        const yields = Object.fromEntries(Object.keys(CONFIG.landPool).filter(k => k !== 'desert').map(k => [k, 0]));
+        this.land.forEach(t => { if (t.res !== 'desert') yields[t.res] += CONFIG.getProb(t.tok); });
+        return yields;
     }
 }
 
 class IterativeOptimizer {
     _score(b) { return RULES.reduce((sum, rule) => sum + rule(b), 0); }
     _state(b) { return b.land.map(t => ({ res: t.res, tok: t.tok })); }
-    _load(b, s) { b.land.forEach((t, i) => { t.res = s[i].res; t.tok = s[i].tok; }); }
 
-    optimize(b) {
-        b._generatePorts();
+    _swap(t1, t2, mode, b) {
+        [t1[mode], t2[mode]] = [t2[mode], t1[mode]];
+        const s = b.land.find(t => t.tok === 7);
+        const d = b.land.find(t => t.res === 'desert');
+        if (d.tok !== 7) [d.tok, s.tok] = [7, d.tok];
+    }
+
+    optimize(b, maxIterations = 50000, startTemp = 4000, coolingRate = 0.9995, patienceThreshold = 5000) {
+        b.generatePorts();
         const res = shuffle(Object.entries(CONFIG.landPool).flatMap(([k, c]) => Array(c).fill(k)));
         const toks = shuffle([...CONFIG.tokens]);
 
         let tIdx = 0;
         b.land.forEach((t, i) => { t.res = res[i]; t.tok = (t.res === 'desert') ? 7 : toks[tIdx++]; });
 
-        let temp = 1500;
-        let current = this._score(b);
+        let temp = startTemp, current = this._score(b), best = current;
         let bestState = this._state(b);
-        let best = current;
+        let noImprovement = 0, actualIterations = 0;
+        const lossHistory = [];
 
-        for (let i = 0; i < 40000; i++) {
-            const backup = this._state(b);
+        for (let i = 0; i < maxIterations; i++) {
+            actualIterations = i;
             const A = b.land[Math.floor(Math.random() * b.land.length)];
             const B = b.land[Math.floor(Math.random() * b.land.length)];
+            if (A === B) continue;
 
-            if (Math.random() < 0.5) [A.res, B.res] = [B.res, A.res];
-            else[A.tok, B.tok] = [B.tok, A.tok];
-
-            const s = b.land.find(t => t.tok === 7);
-            const d = b.land.find(t => t.res === 'desert');
-            if (d && d.tok !== 7 && s) [d.tok, s.tok] = [7, d.tok];
-
+            const mode = Math.random() < 0.5 ? 'res' : 'tok';
+            this._swap(A, B, mode, b);
             const next = this._score(b);
+
             if (next < current || Math.random() < Math.exp((current - next) / temp)) {
                 current = next;
                 if (current < best) {
                     best = current;
                     bestState = this._state(b);
-                }
+                    noImprovement = 0;
+                } else noImprovement++;
             } else {
-                this._load(b, backup);
+                this._swap(A, B, mode, b);
+                noImprovement++;
             }
-            temp *= 0.9992;
+
+            temp *= coolingRate;
+            lossHistory.push({ iteration: i, loss: current, best, temp });
+            if (best === 0 || noImprovement > patienceThreshold) break;
         }
-        this._load(b, bestState);
+
+        b.land.forEach((t, i) => { t.res = bestState[i].res; t.tok = bestState[i].tok; });
+        return { lossHistory, finalScore: best, iterationsUsed: actualIterations };
     }
 }
 
@@ -187,32 +202,28 @@ class CatanUIRenderer {
             boardEl.appendChild(rowEl);
         });
 
-        const stats = { lumber: 0, wool: 0, grain: 0, ore: 0, brick: 0 };
-        board.land.filter(t => t.res !== 'desert').forEach(t => stats[t.res] += CONFIG.getProb(t.tok));
-        const statsValues = Object.values(stats);
-        const statsAvg = statsValues.reduce((a, b) => a + b, 0) / statsValues.length;
-        Object.entries(stats).forEach(([k, v]) => {
+        const yields = board.getYields();
+        const yieldsValues = Object.values(yields);
+        const yieldsAvg = yieldsValues.reduce((a, b) => a + b, 0) / (yieldsValues.length || 1);
+        Object.entries(yields).forEach(([k, v]) => {
             const el = document.querySelector(`#stats .${k}`);
             el.textContent = v.toFixed(0);
-            el.style.color = this._getColor(v, statsAvg, 8);
+            el.style.color = this._getColor(v, yieldsAvg, 8);
         });
 
-        const interValues = board.intersections.map(inter =>
-            inter ? inter.reduce((s, t) => s + CONFIG.getProb(t.tok), 0) : 0
-        );
+        const interValues = board.intersections.map(inter => inter ? inter.reduce((s, t) => s + CONFIG.getProb(t.tok), 0) : 0);
         const interAvg = interValues.reduce((a, b) => a + b, 0) / (interValues.length || 1);
 
         let vIdx = 0;
         [2, 4, 6, 6, 6, 6, 6, 6, 6, 4, 2].forEach(count => {
             const rEl = document.createElement('div');
             rEl.className = 'row flex flex--center';
-
             for (let i = 0; i < count; i++) {
                 const pEl = document.createElement('div');
                 pEl.className = 'point flex flex--center';
                 const probSum = interValues[vIdx++];
                 pEl.textContent = probSum.toFixed(0);
-                pEl.style.background = this._getColor(probSum, interAvg, 5); 
+                pEl.style.background = this._getColor(probSum, interAvg, 5);
                 rEl.appendChild(pEl);
             }
             overlayEl.appendChild(rEl);
@@ -225,10 +236,45 @@ class CatanUIRenderer {
     };
 }
 
+// let activeChart = null;
+// function plotLoss(history) {
+//     const canvas = document.getElementById('lossChart');
+//     const bestLosses = history.map(h => h.best);
+//     const currentLosses = history.map(h => h.loss);
+//     if (!activeChart) {
+//         activeChart = new Chart(canvas, {
+//             type: 'line',
+//             data: {
+//                 labels: history.map(h => h.iteration),
+//                 datasets: [
+//                     { data: currentLosses, borderColor: 'rgb(239, 68, 68)', borderWidth: 1, pointRadius: 0, fill: false },
+//                     { data: bestLosses, borderColor: '#0284c7', borderWidth: 3, pointRadius: 0, fill: false }
+//                 ]
+//             },
+//             options: {
+//                 responsive: true,
+//                 maintainAspectRatio: false,
+//                 scales: { x: { display: false }, y: { beginAtZero: true } },
+//                 plugins: { legend: { display: false } }
+//             }
+//         });
+//     } else {
+//         activeChart.data.labels = history.map(h => h.iteration);
+//         activeChart.data.datasets[0].data = currentLosses;
+//         activeChart.data.datasets[1].data = bestLosses;
+//         activeChart.update();
+//     }
+//     const first = history[0], last = history[history.length - 1];
+//     document.getElementById('loss-info').innerHTML =
+//         `Start-Loss: <span style="color:#ef4444">${first.loss.toFixed(0)}</span> | ` +
+//         `End-Best-Loss: <span style="color:#0284c7">${last.best.toFixed(0)}</span>`;
+// }
+
 document.addEventListener("DOMContentLoaded", () => {
     const board = new CatanBoard()
     const renderer = new CatanUIRenderer();
     const optimizer = new IterativeOptimizer()
+
     const dice = document.getElementById("dice");
     const boardEl = document.getElementById("board");
     const statsBtn = document.getElementById("toggle-stats");
@@ -238,8 +284,9 @@ document.addEventListener("DOMContentLoaded", () => {
         wrapperEl.classList.add('loading');
         boardEl.removeAttribute('data-roll-val');
         setTimeout(() => {
-            optimizer.optimize(board);
+            const result = optimizer.optimize(board);
             renderer.render(board);
+            // plotLoss(result.lossHistory);
             wrapperEl.classList.remove('loading');
         }, 0);
     };

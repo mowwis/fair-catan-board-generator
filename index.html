@@ -6,6 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Fair Catan Boards</title>
 
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js"></script>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/mowwis/align-ui@latest/dist/align.min.css">
     <link rel="stylesheet" href="style.css">
 </head>
@@ -45,8 +46,14 @@
             <button id="dice-reset" class="btn btn--icon btn--ghost" title="Reset Dice"><i
                     class='fas fa-redo'></i></button>
         </div>
-    </main>
 
+        <div id="chart-container"
+            style="width: 100%; max-width: 600px; padding: 20px; border: 1px solid #000; border-radius: 12px;">
+            <h3>Optimization History (Loss)</h3>
+            <div style="height: 300px; width: 100%;"><canvas id="lossChart"></canvas></div>
+            <div id="loss-info" style="font-family: monospace; font-size: 13px; font-weight:bold"></div>
+        </div>
+    </main>
 
     <template id="tile-template">
         <div class="tile flex-col flex--center">
@@ -54,28 +61,6 @@
             <div class="token flex flex--center"></div>
         </div>
     </template>
-
-    <!-- <details style="display: none;">
-        <summary>
-            <h3>Board Fairness Criteria</h3>
-        </summary>
-        <ul>
-            <li><strong>Desert Isolation:</strong> The desert tile is strictly prohibited from touching the outer water
-                ring (ocean coastline).</li>
-            <li><strong>Resource Dispersion:</strong> Maximum of 2 identical resource types can be adjacent to avoid
-                massive mono-cultural territory clumps.</li>
-            <li><strong>No Adjacent Identical Numbers:</strong> Identical numbers are completely barred from touching
-                each other directly.</li>
-            <li><strong>Red Token Non-Contiguity:</strong> High-yield numbers (6 & 8) cannot touch and are banned from
-                being assigned to the same resource category.</li>
-            <li><strong>Vertex Production Cap:</strong> No individual intersection spot can accumulate more than 11
-                total pips, blocking game-breaking initial settlements.</li>
-            <li><strong>Strict Global Yield Equity:</strong> Total resource pips are dynamically normalized to minimize
-                variance across categories to less than 10%.</li>
-            <li><strong>Alternating Port Symmetrics:</strong> Maritime trade harbors rotate flawlessly around the
-                coastline using a strict [3:1 ➔ Sea ➔ 2:1 ➔ Sea] cyclic rhythm.</li>
-        </ul>
-    </details> -->
 
     <script src="app.js"></script>
 </body>
