@@ -15,7 +15,7 @@ const RULES = [
     b => b.land.reduce((sum, t) => sum + (t.tok === 7 ? 0 : b.land.filter(o => o.id < t.id && o.res === t.res && (o.tok === t.tok || ((o.tok === 6 || o.tok === 8) && (t.tok === 6 || t.tok === 8)))).length), 0) * 3000,
     // Maximal 2 gleiche Ressourcen an Kreuzung
     b => b.intersections.reduce((sum, inter) => {
-        const max = 2; // 1-3
+        const max = 1; // 1-3
         const resList = inter.filter(t => !t.isWater && t.res !== 'desert').map(t => t.res);
         return sum + Math.max(0, resList.filter((res, i) => resList.indexOf(res) !== i).length - (max - 1));
     }, 0) * 1500,
