@@ -26,7 +26,8 @@
             <div id="overlay" class="flex-col flex--center"></div>
 
             <menu class="flex items-center">
-                <button class="btn btn--icon" title="Settings for Generation"><i class="fa-solid fa-gear"></i></button>
+                <button class="btn btn--icon" id="toggle-settings" title="Settings for Generation"><i
+                        class="fa-solid fa-gear"></i></button>
                 <button class="btn btn--icon" id="toggle-stats" title="Toggle Board Statistics"><i
                         class="fa-solid fa-chart-simple"></i></button>
             </menu>
@@ -46,6 +47,18 @@
             <button id="dice-reset" class="btn btn--icon btn--ghost" title="Reset Dice"><i
                     class='fas fa-redo'></i></button>
         </div>
+
+        <dialog id="settings-menu">
+            <header class="flex items-center">
+                <h1>Board Rules</h1>
+                <form method="dialog">
+                    <button class="btn btn--icon btn--ghost"><i class="fa-solid fa-xmark"></i></button>
+                </form>
+            </header>
+            <div class="content flex-col"></div>
+            <p><i class="fa-solid fa-circle-info"></i>
+                It may still be possible that generated boards violate the desired rules.</p>
+        </dialog>
 
         <!-- <div id="chart-container"
             style="width: 100%; max-width: 600px; padding: 20px; border: 1px solid #000; border-radius: 12px;">

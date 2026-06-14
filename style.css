@@ -9,26 +9,61 @@ main {
     text-align: center;
 }
 
-header .btn {
-    padding: 0;
-    border: none;
-    border-radius: 0;
-}
+main>header {
+    .btn {
+        padding: 0;
+        border: none;
+        border-radius: 0;
+    }
 
-header h1 {
-    color: var(--color-gray-000);
-    padding: 1rem 2rem;
-    font-size: clamp(1.6rem, 5vw, 2.5rem);
-    font-weight: 900;
-    background-color: var(--color-gray-090);
+    h1 {
+        color: var(--color-gray-000);
+        padding: 1rem 2rem;
+        font-size: clamp(1.6rem, 5vw, 2.5rem);
+        font-weight: 900;
+        background-color: var(--color-gray-090);
 
-    &:hover {
-        background-color: var(--color-gray-100);
+        &:hover {
+            background-color: var(--color-gray-100);
+        }
+    }
+
+    p {
+        font-size: clamp(.8rem, 2.5vw, 1rem);
     }
 }
 
-header p {
-    font-size: clamp(.8rem, 2.5vw, 1rem);
+#settings-menu {
+    padding: 0;
+    text-align: left;
+
+    header {
+        padding: 2rem 1.8rem 0;
+
+        form {
+            margin-left: auto;
+        }
+    }
+
+    .content {
+        gap: 0;
+        padding: 2rem 1.8rem;
+
+        &>div {
+            padding: .5rem;
+        }
+    }
+
+    &>p {
+        color: var(--color-gray-040);
+        padding: 0 1.8rem 2rem;
+        font-size: 0.8rem;
+        font-style: italic;
+    }
+
+    .checkbox span {
+        font-size: 1.2rem;
+    }
 }
 
 
@@ -297,21 +332,21 @@ header p {
     .row:nth-of-type(2n+1) .point:nth-of-type(2n):not(:nth-last-of-type(1)) {
         margin-right: 6.9cqw;
     }
-}
 
-.point {
-    gap: 0;
-    width: 5.7cqw;
-    height: 5.7cqw;
-    border-radius: 50%;
+    .point {
+        gap: 0;
+        width: 5.7cqw;
+        height: 5.7cqw;
+        border-radius: 50%;
 
-    color: var(--color-gray-000);
-    font-size: 2.3cqw;
-    font-weight: 900;
+        color: var(--color-gray-000);
+        font-size: 2.3cqw;
+        font-weight: 900;
 
-    &::after {
-        font-size: 50%;
-        content: '%';
+        &::after {
+            font-size: 50%;
+            content: '%';
+        }
     }
 }
 

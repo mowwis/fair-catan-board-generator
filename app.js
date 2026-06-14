@@ -5,41 +5,107 @@ const CONFIG = {
     getProb: (n) => (n && n !== 7) ? (6 - Math.abs(7 - n)) / 36 * 100 : 0
 };
 
-const RULES = [
-    // Keine Wüste am Wasser
-    // b => (b.land.some(t => t.res === 'desert' && b.getN(t).some(n => n.isWater)) ? 1 : 0) * 1000,
-
-    // Keine gleichen Zahlen nebeneinander (inkl. 6/8)
-    b => b.land.reduce((sum, t) => sum + (t.tok === 7 ? 0 : b.getLandN(t).filter(n => n.id < t.id && (n.tok === t.tok || ((n.tok === 6 || n.tok === 8) && (t.tok === 6 || t.tok === 8)))).length), 0) * 5000,
-    // Keine gleichen Zahlen auf derselben Ressourcenart (inkl. 6/8)
-    b => b.land.reduce((sum, t) => sum + (t.tok === 7 ? 0 : b.land.filter(o => o.id < t.id && o.res === t.res && (o.tok === t.tok || ((o.tok === 6 || o.tok === 8) && (t.tok === 6 || t.tok === 8)))).length), 0) * 3000,
-    // Maximal 2 gleiche Ressourcen an Kreuzung
-    b => b.intersections.reduce((sum, inter) => {
-        const max = 1; // 1-3
-        const resList = inter.filter(t => !t.isWater && t.res !== 'desert').map(t => t.res);
-        return sum + Math.max(0, resList.filter((res, i) => resList.indexOf(res) !== i).length - (max - 1));
-    }, 0) * 1500,
-    // Keine gleichen Zahlen auf Holz und Lehm
-    b => b.land.filter(t => t.res === 'lumber' && t.tok !== 7).reduce((sum, l) => sum + b.land.filter(o => o.res === 'brick' && o.tok === l.tok).length, 0) * 1000,
-    // Intersection Fairness
-    b => {
-        const weights = { 3: 100, 2: 50, 1: 20 }, groups = { 3: [], 2: [], 1: [] };
-        b.intersections.forEach(inter => {
-            const landCount = inter.filter(t => !t.isWater).length;
-            if (landCount === 0) return;
-            groups[landCount].push(inter.reduce((s, t) => s + ((t.isWater || t.tok === 7) ? 0 : CONFIG.getProb(t.tok)), 0));
-        });
-        return Object.entries(groups).reduce((total, [count, list]) => {
-            if (!list.length) return total;
-            const avg = list.reduce((a, b) => a + b, 0) / list.length;
-            return total + list.reduce((s, p) => s + Math.pow(p - avg, 2), 0) * weights[count];
-        }, 0) * 5;
+const RULE_SETTINGS = [
+    {
+        id: "des_wat",
+        name: "No Desert by Water",
+        enabled: false,
+        min: 0,
+        max: 1,
+        weight: 3,
+        fn: (b) => b.land.some(t => t.res === 'desert' && b.getN(t).some(n => n.isWater)) ? 1 : 0
     },
-    // Global Ressource-Balance
-    b => {
-        const yields = Object.values(b.getYields());
-        const avg = yields.reduce((a, b) => a + b, 0) / yields.length;
-        return yields.reduce((sum, y) => sum + Math.pow(y - avg, 2), 0) * 15;
+    {
+        id: "same_tok_same_res",
+        name: "No Same Numbers on Same Resource (incl. 6/8)",
+        enabled: true,
+        min: 0,
+        max: 6,
+        weight: 2,
+        fn: (b) => b.land.reduce((sum, t) => sum + (t.tok === 7 ? 0 : b.land.filter(o => o.id < t.id && o.res === t.res && (o.tok === t.tok || ((o.tok === 6 || o.tok === 8) && (t.tok === 6 || t.tok === 8)))).length), 0)
+    },
+    {
+        id: "max_res",
+        name: "Max Same Resources at Intersection",
+        enabled: true,
+        min: 0,
+        max: 20,
+        weight: 1,
+        params: { maxAllowed: 1 },
+        fn: (b, params) => b.intersections.reduce((sum, inter) => {
+            const resList = inter.filter(t => !t.isWater && t.res !== 'desert').map(t => t.res);
+            return sum + Math.max(0, resList.filter((res, i) => resList.indexOf(res) !== i).length - (params.maxAllowed - 1));
+        }, 0)
+    },
+    {
+        id: "dist_same_tok",
+        name: "Maximize Distance of Same Numbers (incl. 6/8)",
+        enabled: true,
+        min: 0,
+        max: 16,
+        weight: 3,
+        fn: (b) => b.land.reduce((sum, t) => {
+            const isRed = (tok) => tok === 6 || tok === 8;
+            if (t.tok === 7) return sum;
+            const matches = b.land.filter(o => o.id < t.id && o.tok !== 7 && (o.tok === t.tok || (isRed(t.tok) && isRed(o.tok))));
+            return sum + matches.reduce((p, o) => {
+                const d = (Math.abs(t.q - o.q) + Math.abs(t.r - o.r) + Math.abs(t.s - o.s)) / 2;
+                const mult = isRed(t.tok) && isRed(o.tok) ? (t.tok === o.tok ? 5 : 3) : 1;
+                return p + (mult / (d * d));
+            }, 0);
+        }, 0)
+    },
+    {
+        id: "adjacent_tok",
+        name: "No Same Numbers Adjacent (incl. 6/8)",
+        enabled: false,
+        min: 0,
+        max: 8,
+        weight: 3,
+        fn: (b) => b.land.reduce((sum, t) => sum + (t.tok === 7 ? 0 : b.getLandN(t).filter(n => n.id < t.id && (n.tok === t.tok || ((n.tok === 6 || n.tok === 8) && (t.tok === 6 || t.tok === 8)))).length), 0)
+    },
+    {
+        id: "tok_lumber_brick",
+        name: "No Same Numbers on Lumber and Brick",
+        enabled: true,
+        min: 0,
+        max: 2,
+        weight: 1,
+        fn: (b) => b.land.filter(t => t.res === 'lumber' && t.tok !== 7).reduce((sum, l) => sum + b.land.filter(o => o.res === 'brick' && o.tok === l.tok).length, 0)
+    },
+    {
+        id: "global_res_balance",
+        name: "Global Resource Balance",
+        enabled: true,
+        min: 0,
+        max: 500,
+        weight: 1,
+        fn: (b) => {
+            const yields = Object.values(b.getYields());
+            const avg = yields.reduce((a, b) => a + b, 0) / yields.length;
+            return yields.reduce((sum, y) => sum + Math.pow(y - avg, 2), 0);
+        }
+    },
+    {
+        id: "fair_inter",
+        name: "Intersection Fairness",
+        enabled: true,
+        min: 0,
+        max: 150000,
+        weight: 3,
+        fn: (b) => {
+            const weights = { 3: 100, 2: 50, 1: 20 }, groups = { 3: [], 2: [], 1: [] };
+            b.intersections.forEach(inter => {
+                const landCount = inter.filter(t => !t.isWater).length;
+                if (landCount === 0) return;
+                groups[landCount].push(inter.reduce((s, t) => s + ((t.isWater || t.tok === 7) ? 0 : CONFIG.getProb(t.tok)), 0));
+            });
+            return Object.entries(groups).reduce((total, [count, list]) => {
+                if (!list.length) return total;
+                const avg = list.reduce((a, b) => a + b, 0) / list.length;
+                return total + list.reduce((s, p) => s + Math.pow(p - avg, 2), 0) * weights[count];
+            }, 0);
+        }
     },
 ];
 
@@ -113,8 +179,18 @@ class CatanBoard {
 }
 
 class IterativeOptimizer {
-    _score(b) { return RULES.reduce((sum, rule) => sum + rule(b), 0); }
     _state(b) { return b.land.map(t => ({ res: t.res, tok: t.tok })); }
+
+    _score(b, activeRules, prioritySum) {
+        if (prioritySum === 0) return 0;
+        return activeRules.reduce((sum, rule) => {
+            const min = rule.min || 0, max = rule.max || 1;
+            let normalizedLoss = (rule.fn(b, rule.params) - min) / ((max - min) || 1);
+            normalizedLoss = Math.max(0, Math.min(1.5, normalizedLoss));
+            const scaledWeight = (rule.weight / prioritySum) * 1000;
+            return sum + (normalizedLoss * scaledWeight);
+        }, 0);
+    }
 
     _swap(t1, t2, mode, b) {
         [t1[mode], t2[mode]] = [t2[mode], t1[mode]];
@@ -123,15 +199,26 @@ class IterativeOptimizer {
         if (d.tok !== 7) [d.tok, s.tok] = [7, d.tok];
     }
 
-    optimize(b, maxIterations = 50000, startTemp = 4000, coolingRate = 0.9995, patienceThreshold = 5000) {
-        b.generatePorts();
+    _initBoard(b) {
         const res = shuffle(Object.entries(CONFIG.landPool).flatMap(([k, c]) => Array(c).fill(k)));
         const toks = shuffle([...CONFIG.tokens]);
-
         let tIdx = 0;
-        b.land.forEach((t, i) => { t.res = res[i]; t.tok = (t.res === 'desert') ? 7 : toks[tIdx++]; });
+        b.land.forEach((t, i) => {
+            t.res = res[i];
+            t.tok = (t.res === 'desert') ? 7 : toks[tIdx++];
+        });
+    }
 
-        let temp = startTemp, current = this._score(b), best = current;
+    optimize(b, maxIterations = 50000, startTemp = 150, coolingRate = 0.9993, patienceThreshold = 8000) {
+        b.generatePorts();
+        this._initBoard(b);
+
+        const activeRules = RULE_SETTINGS.filter(r => r.enabled);
+        const prioritySum = activeRules.reduce((sum, r) => sum + r.weight, 0);
+
+        let temp = startTemp;
+        let current = this._score(b, activeRules, prioritySum);
+        let best = current;
         let bestState = this._state(b);
         let noImprovement = 0, actualIterations = 0;
         const lossHistory = [];
@@ -144,7 +231,7 @@ class IterativeOptimizer {
 
             const mode = Math.random() < 0.5 ? 'res' : 'tok';
             this._swap(A, B, mode, b);
-            const next = this._score(b);
+            const next = this._score(b, activeRules, prioritySum);
 
             if (next < current || Math.random() < Math.exp((current - next) / temp)) {
                 current = next;
@@ -230,6 +317,38 @@ class CatanUIRenderer {
         });
     }
 
+    buildSettingsMenu() {
+        const settingsMenu = document.getElementById("settings-menu");
+        const container = settingsMenu.querySelector(".content");
+
+        container.innerHTML = RULE_SETTINGS.map(rule => `
+            <div class="flex items--center" data-id="${rule.id}">
+                <label class="checkbox">
+                    <input type="checkbox" class="rule-toggle" ${rule.enabled ? 'checked' : ''}>
+                    <span></span>
+                    ${rule.name}
+                </label>
+                <div class="settings-params flex">
+                    ${Object.entries(rule.params || {}).map(([key, val]) => `
+                        <input type="number" class="rule-param" data-key="${key}" value="${val}" min="1" max="3">
+                    `).join('')}
+                </div>
+            </div>
+        `).join('');
+
+        container.onchange = (e) => {
+            const item = e.target.closest("[data-id]");
+            const rule = RULE_SETTINGS.find(r => r.id === item.dataset.id);
+            settingsMenu.hasChanges = true;
+
+            if (e.target.classList.contains("rule-toggle")) {
+                rule.enabled = e.target.checked;
+            } else if (e.target.classList.contains("rule-param")) {
+                rule.params[e.target.dataset.key] = parseInt(e.target.value) || 1;
+            }
+        };
+    };
+
     _getColor(value, target, factor = 12) {
         const hue = Math.max(0, Math.min(120, 60 + (value - target) * factor));
         return `hsl(${hue}, 90%, 45%)`;
@@ -279,6 +398,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const boardEl = document.getElementById("board");
     const statsBtn = document.getElementById("toggle-stats");
     const wrapperEl = document.getElementById('board-wrapper');
+    const settingsMenu = document.getElementById("settings-menu");
 
     const handleGeneration = () => {
         wrapperEl.classList.add('loading');
@@ -302,6 +422,13 @@ document.addEventListener("DOMContentLoaded", () => {
         wrapperEl.classList.toggle('hide-stats');
     };
 
+    settingsMenu.onclick = (e) => { if (e.target === settingsMenu) settingsMenu.close(); };
+    settingsMenu.onclose = () => { if (settingsMenu.hasChanges) handleGeneration(); };
+    document.getElementById("toggle-settings").onclick = () => {
+        settingsMenu.hasChanges = false;
+        settingsMenu.showModal();
+    };
+
     dice.onclick = () => {
         let total = 0;
         dice.querySelectorAll("div").forEach(die => {
@@ -314,5 +441,6 @@ document.addEventListener("DOMContentLoaded", () => {
         boardEl.dataset.rollVal = total;
     };
 
+    renderer.buildSettingsMenu();
     handleGeneration();
 });
