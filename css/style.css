@@ -188,38 +188,38 @@ main>header {
 
     &.lumber .hex::before {
         background-color: #46642d;
-        background-image: url("/assets/lumber.png");
+        background-image: url("../assets/lumber.png");
     }
 
     &.brick .hex::before {
         background-color: #b87629;
-        background-image: url("/assets/brick.png");
+        background-image: url("../assets/brick.png");
     }
 
     &.wool .hex::before {
         background-color: #96c21c;
-        background-image: url("/assets/wool.png");
+        background-image: url("../assets/wool.png");
     }
 
     &.grain .hex::before {
         background-color: #e2ba24;
-        background-image: url("/assets/grain.png");
+        background-image: url("../assets/grain.png");
     }
 
     &.ore .hex::before {
         background-color: #6e6871;
-        background-image: url("/assets/ore.png");
+        background-image: url("../assets/ore.png");
     }
 
     &.desert .hex::before {
         background-color: #c4a75a;
-        background-image: url("/assets/desert.png");
+        background-image: url("../assets/desert.png");
     }
 
     &.water .hex::before {
         background-size: 110%;
         background-color: #5da1d4;
-        background-image: url("/assets/water.webp");
+        background-image: url("../assets/water.webp");
     }
 
     &.water:is(.brick, .grain, .ore, .lumber, .wool)::before {
@@ -235,23 +235,23 @@ main>header {
     }
 
     &.water.brick::before {
-        background-image: url("/assets/brick_icon.jpg");
+        background-image: url("../assets/brick_icon.jpg");
     }
 
     &.water.grain::before {
-        background-image: url("/assets/grain_icon.jpg");
+        background-image: url("../assets/grain_icon.jpg");
     }
 
     &.water.ore::before {
-        background-image: url("/assets/ore_icon.jpg");
+        background-image: url("../assets/ore_icon.jpg");
     }
 
     &.water.lumber::before {
-        background-image: url("/assets/lumber_icon.jpg");
+        background-image: url("../assets/lumber_icon.jpg");
     }
 
     &.water.wool::before {
-        background-image: url("/assets/wool_icon.jpg");
+        background-image: url("../assets/wool_icon.jpg");
     }
 
     .token {
@@ -375,23 +375,23 @@ main>header {
         }
 
         &.lumber {
-            background-image: url("/assets/lumber_icon.jpg");
+            background-image: url("../assets/lumber_icon.jpg");
         }
 
         &.grain {
-            background-image: url("/assets/grain_icon.jpg");
+            background-image: url("../assets/grain_icon.jpg");
         }
 
         &.ore {
-            background-image: url("/assets/ore_icon.jpg");
+            background-image: url("../assets/ore_icon.jpg");
         }
 
         &.brick {
-            background-image: url("/assets/brick_icon.jpg");
+            background-image: url("../assets/brick_icon.jpg");
         }
 
         &.wool {
-            background-image: url("/assets/wool_icon.jpg");
+            background-image: url("../assets/wool_icon.jpg");
         }
     }
 }
